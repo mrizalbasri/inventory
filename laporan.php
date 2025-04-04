@@ -1,0 +1,239 @@
+<?php
+include 'database.php';
+include 'report_model.php';
+
+// Initialize Report Model
+$reportModel = new ReportModel($database);
+
+// Handle form submissions
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (isset($_POST['add_report'])) {
+        $reportModel->createReport(
+            $_POST['id'], 
+            $_POST['jenis_laporan'], 
+            $_POST['tanggal_awal'], 
+            $_POST['tanggal_akhir'], 
+            $_POST['generated_by']
+        );
+    }
+
+    header('Location: laporan.php');
+    exit();
+}
+
+// Fetch all reports
+$reports = $reportModel->getAllReports();
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Report Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+        .sidebar {
+            background-color: #233246;
+            color: white;
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 250px;
+        }
+        .main-content {
+            margin-left: 250px;
+            padding: 20px;
+        }
+        .add-report-container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .form-control, .btn {
+            height: 42px;
+        }
+
+
+              /* Sembunyikan checkbox asli */
+              .theme-switch-input {
+            display: none;
+        }
+
+        /* Tema default (terang) */
+        body {
+            background-color: #ffffff;
+            color: #000000;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .card {
+            background-color: #f8f9fa;
+        }
+  /* Checkbox tema */
+  .theme-switch-input {
+            display: none;
+        }
+
+        .theme-switch-label {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            cursor: pointer;
+            padding: 10px;
+            background-color: #6c757d;
+            color: white;
+            border-radius: 5px;
+        }
+
+        /* Tema default (terang) */
+        body {
+            background-color: #f4f6f9;
+            color: #000;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar {
+            background-color: #233246;
+            color: white;
+        }
+
+        .add-report-container {
+            background-color: white;
+        }
+
+        .card {
+            background-color: white;
+        }
+
+        /* Tema gelap */
+        body.dark-theme {
+            background-color: #121212;
+            color: #ffffff;
+        }
+
+        body.dark-theme .sidebar {
+            background-color: #1e1e1e;
+        }
+
+        body.dark-theme .add-report-container {
+            background-color: #2c2c2c;
+        }
+
+        body.dark-theme .card {
+            background-color: #1e1e1e;
+            border-color: #333;
+        }
+
+        body.dark-theme .table {
+            color: #ffffff;
+        }
+
+        body.dark-theme .form-control {
+            background-color: #333;
+            color: #ffffff;
+            border-color: #555;
+        }
+    </style>
+</head>
+<body>
+<input type="checkbox" id="themeSwitch" class="theme-switch-input">
+    <label for="themeSwitch" class="theme-switch-label">
+        Ganti Tema
+    </label>
+    <div class="container-fluid">
+        <div class="row">
+                <!-- Checkbox tersembunyi untuk mengontrol tema -->
+  
+            <?php include 'sidebar.php'; ?>
+
+            <main class="col main-content">
+                <h2 class="mb-4">Report Management</h2>
+
+                <div class="add-report-container mb-4">
+                    <form method="POST" class="row g-2 align-items-center">
+                        <div class="col">
+                            <input type="number" name="id" class="form-control" placeholder="Report ID" required>
+                        </div>
+                        <div class="col">
+                            <select name="jenis_laporan" class="form-control" required>
+                                <option value="">Report Type</option>
+                                <option value="stok">Stok</option>
+                                <option value="transaksi">Transaksi</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <input type="date" name="tanggal_awal" class="form-control" placeholder="Start Date" required>
+                        </div>
+                        <div class="col">
+                            <input type="date" name="tanggal_akhir" class="form-control" placeholder="End Date" required>
+                        </div>
+                        <div class="col">
+                            <input type="number" name="generated_by" class="form-control" placeholder="Generated By" required>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" name="add_report" class="btn btn-primary">Add Report</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="mb-3">
+                    <form method="POST" class="d-inline">
+                        <button type="submit" name="export_pdf" class="btn btn-danger">Export PDF</button>
+                    </form>
+                    <form method="POST" class="d-inline ms-2">
+                        <button type="submit" name="export_excel" class="btn btn-success">Export Excel</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-3">Reports List</h5>
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Jenis Laporan</th>
+                                        <th>Tanggal Awal</th>
+                                        <th>Tanggal Akhir</th>
+                                        <th>Generated By</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($reports as $report): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($report['id']) ?></td>
+                                        <td><?= htmlspecialchars($report['jenis_laporan']) ?></td>
+                                        <td><?= htmlspecialchars($report['tanggal_awal']) ?></td>
+                                        <td><?= htmlspecialchars($report['tanggal_akhir']) ?></td>
+                                        <td><?= htmlspecialchars($report['generated_by']) ?></td>
+                                        <td>
+                                            <button class="btn btn-sm btn-danger">Delete</button>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Tambahkan JavaScript untuk mengubah tema
+        document.getElementById('themeSwitch').addEventListener('change', function() {
+            document.body.classList.toggle('dark-theme', this.checked);
+        });
+    </script>
+</body>
+</html>
