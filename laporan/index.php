@@ -1,5 +1,5 @@
 <?php
-include 'database.php';
+require_once '../config/database.php';
 include 'report_model.php';
 
 // Initialize Report Model
@@ -19,6 +19,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $_SESSION['success'] = "Report successfully added!";
     }
     
+    // Update report
+    if (isset($_POST['update_report'])) {
+        $reportModel->updateReport(
+            $_POST['id'],
+            $_POST['jenis_laporan'],
+            $_POST['tanggal_awal'],
+            $_POST['tanggal_akhir'],
+            $_POST['generated_by']
+        );
+        $_SESSION['success'] = "Report successfully updated!";
+    }
+    
     // Delete report
     if (isset($_POST['delete_report'])) {
         $reportModel->deleteReport($_POST['report_id']);
@@ -36,24 +48,58 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         header('Location: export_excel.php');
         exit();
     }
-    
-    // Handle theme toggle
-    if (isset($_POST['toggle_theme'])) {
-        $newThemeValue = isset($_POST['dark_mode']) ? 'true' : 'false';
-        setcookie('dark_mode', $newThemeValue, time() + 31536000, '/');
-        header('Location: laporan.php');
-        exit();
-    }
 
-    header('Location: laporan.php');
+    header('Location: index.php');
     exit();
+}
+
+// Get report by ID for edit modal
+$editReport = null;
+if (isset($_GET['edit_id'])) {
+    $editReport = $reportModel->getReportById($_GET['edit_id']);
+    $showEditModal = true;
+} else {
+    $showEditModal = false;
 }
 
 // Fetch all reports
 $reports = $reportModel->getAllReports();
 
-// Get user preferences
-$darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
+// Apply search filter
+if (isset($_GET['search']) && !empty($_GET['search'])) {
+    $filtered = [];
+    $search = strtolower($_GET['search']);
+    foreach ($reports as $report) {
+        if (
+            strpos(strtolower($report['id']), $search) !== false ||
+            strpos(strtolower($report['jenis_laporan']), $search) !== false
+        ) {
+            $filtered[] = $report;
+        }
+    }
+    $reports = $filtered;
+}
+
+// Apply jenis filter
+if (isset($_GET['filter_jenis']) && !empty($_GET['filter_jenis'])) {
+    $filtered = [];
+    foreach ($reports as $report) {
+        if ($report['jenis_laporan'] == $_GET['filter_jenis']) {
+            $filtered[] = $report;
+        }
+    }
+    $reports = $filtered;
+}
+
+// Simple pagination implementation
+$records_per_page = 10;
+$total_records = count($reports);
+$total_pages = ceil($total_records / $records_per_page);
+$current_page = isset($_GET['page']) ? max(1, min($total_pages, intval($_GET['page']))) : 1;
+$offset = ($current_page - 1) * $records_per_page;
+
+// Slice the array for pagination
+$paginatedReports = array_slice($reports, $offset, $records_per_page);
 ?>
 
 <!DOCTYPE html>
@@ -81,8 +127,6 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
         }
         
         .sidebar {
-            background: linear-gradient(180deg, #4e73df 10%, #224abe 100%);
-            color: white;
             height: 100vh;
             position: fixed;
             left: 0;
@@ -122,6 +166,11 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
             border-color: var(--success-color);
         }
         
+        .btn-warning {
+            background-color: var(--warning-color);
+            border-color: var(--warning-color);
+        }
+        
         .form-control:focus {
             border-color: #bac8f3;
             box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
@@ -132,63 +181,6 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
             color: #5a5c69;
             font-weight: 700;
             border-top: none;
-        }
-        
-        .theme-switch-wrapper {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-        }
-        
-        .dark-theme {
-            background-color: #1e1e2d;
-            color: #e2e2e2;
-        }
-        
-        .dark-theme .sidebar {
-            background: linear-gradient(180deg, #3a3a57 10%, #1e1e2d 100%);
-        }
-        
-        .dark-theme .card {
-            background-color: #2d2d3f;
-            border-color: #2d2d3f;
-            color: #e2e2e2;
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(0, 0, 0, 0.2);
-        }
-        
-        .dark-theme .card-header {
-            background-color: #262636;
-            border-color: #2d2d3f;
-            color: #e2e2e2;
-        }
-        
-        .dark-theme .table {
-            color: #e2e2e2;
-        }
-        
-        .dark-theme .table th {
-            background-color: #262636;
-            color: #e2e2e2;
-            border-color: #2d2d3f;
-        }
-        
-        .dark-theme .table td {
-            border-color: #2d2d3f;
-        }
-        
-        .dark-theme .form-control {
-            background-color: #262636;
-            border-color: #2d2d3f;
-            color: #e2e2e2;
-        }
-        
-        .dark-theme .form-select {
-            background-color: #262636;
-            border-color: #2d2d3f;
-            color: #e2e2e2;
         }
         
         /* Pagination Styling */
@@ -202,21 +194,20 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
             color: white;
         }
         
-        .dark-theme .pagination .page-item .page-link {
-            background-color: #262636;
-            border-color: #2d2d3f;
-            color: #e2e2e2;
-        }
-        
-        .dark-theme .pagination .page-item.active .page-link {
-            background-color: var(--primary-color);
-            border-color: var(--primary-color);
-        }
-        
         /* Alert styling */
         .alert {
             border-radius: 0.35rem;
             border: none;
+        }
+        
+        /* Modal styling */
+        .modal-header {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .modal-footer {
+            background-color: #f8f9fc;
         }
         
         /* Mobile responsive */
@@ -237,20 +228,15 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
         .mobile-only {
             display: none;
         }
+
+        footer {
+            font-size: 0.8rem;
+            color: var(--secondary-color);
+        }
+        
     </style>
 </head>
-<body class="<?= $darkMode ? 'dark-theme' : '' ?>">
-    <!-- Theme Switch Form -->
-    <div class="theme-switch-wrapper">
-        <form method="POST" action="">
-            <button type="submit" name="toggle_theme" class="btn <?= $darkMode ? 'btn-light' : 'btn-dark' ?>">
-                <i class="bi <?= $darkMode ? 'bi-sun' : 'bi-moon' ?>"></i>
-                <?= $darkMode ? 'Light Mode' : 'Dark Mode' ?>
-            </button>
-            <input type="hidden" name="dark_mode" value="<?= !$darkMode ? 'true' : '' ?>">
-        </form>
-    </div>
-    
+<body>
     <!-- Mobile Menu Toggle -->
     <div class="mobile-only mt-3 ms-3">
         <a href="#" class="btn btn-primary">
@@ -261,24 +247,12 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
     <div class="container-fluid">
         <div class="row">
             <!-- Sidebar -->
-            <?php include 'sidebar.php'; ?>
+            <?php include '../include/sidebar.php'; ?>
 
             <!-- Main Content -->
             <main class="col main-content">
                 <div class="d-sm-flex align-items-center justify-content-between mb-4">
                     <h1 class="h3 mb-0">Manajemen Laporan</h1>
-                    <div>
-                        <form method="POST" class="d-inline">
-                            <button type="submit" name="export_pdf" class="btn btn-danger">
-                                <i class="bi bi-file-earmark-pdf me-1"></i> Export PDF
-                            </button>
-                        </form>
-                        <form method="POST" class="d-inline ms-2">
-                            <button type="submit" name="export_excel" class="btn btn-success">
-                                <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
-                            </button>
-                        </form>
-                    </div>
                 </div>
 
                 <!-- Success Alert -->
@@ -288,6 +262,14 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
                 <?php unset($_SESSION['success']); endif; ?>
+                
+                <!-- Error Alert -->
+                <?php if (isset($_SESSION['error'])): ?>
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <?= $_SESSION['error'] ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                <?php unset($_SESSION['error']); endif; ?>
 
                 <!-- Add Report Card -->
                 <div class="card shadow mb-4">
@@ -340,7 +322,8 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <form method="GET" class="d-flex">
-                                    <input type="text" name="search" class="form-control me-2" placeholder="Cari laporan...">
+                                    <input type="text" name="search" class="form-control me-2" placeholder="Cari laporan..." 
+                                        value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>">
                                     <button class="btn btn-primary" type="submit">
                                         <i class="bi bi-search"></i>
                                     </button>
@@ -392,12 +375,12 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php if (empty($reports)): ?>
+                                    <?php if (empty($paginatedReports)): ?>
                                     <tr>
                                         <td colspan="6" class="text-center">Tidak ada data laporan</td>
                                     </tr>
                                     <?php else: ?>
-                                    <?php foreach ($reports as $report): ?>
+                                    <?php foreach ($paginatedReports as $report): ?>
                                     <tr>
                                         <td><?= htmlspecialchars($report['id']) ?></td>
                                         <td>
@@ -416,10 +399,10 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
                                         <td><?= htmlspecialchars(date('d M Y', strtotime($report['tanggal_akhir']))) ?></td>
                                         <td><?= htmlspecialchars($report['generated_by']) ?></td>
                                         <td class="text-center">
-                                            <a href="view_report.php?id=<?= $report['id'] ?>" class="btn btn-sm btn-info">
+                                            <a href="view.php?id=<?= $report['id'] ?>" class="btn btn-sm btn-info">
                                                 <i class="bi bi-eye"></i>
                                             </a>
-                                            <a href="edit_report.php?id=<?= $report['id'] ?>" class="btn btn-sm btn-warning">
+                                            <a href="index.php?edit_id=<?= $report['id'] ?>" class="btn btn-sm btn-warning">
                                                 <i class="bi bi-pencil"></i>
                                             </a>
                                             <form method="POST" class="d-inline">
@@ -436,39 +419,85 @@ $darkMode = isset($_COOKIE['dark_mode']) && $_COOKIE['dark_mode'] === 'true';
                             </table>
                         </div>
                         
-                        <?php
-                        // Simple pagination implementation
-                        $total_records = count($reports);
-                        $records_per_page = 10;
-                        $total_pages = ceil($total_records / $records_per_page);
-                        $current_page = isset($_GET['page']) ? max(1, min($total_pages, intval($_GET['page']))) : 1;
-                        ?>
-                        
                         <!-- Pagination -->
                         <?php if ($total_pages > 1): ?>
                         <nav aria-label="Page navigation" class="mt-4">
                             <ul class="pagination justify-content-center">
                                 <li class="page-item <?= ($current_page <= 1) ? 'disabled' : '' ?>">
-                                    <a class="page-link" href="?page=<?= $current_page - 1 ?>" tabindex="-1" <?= ($current_page <= 1) ? 'aria-disabled="true"' : '' ?>>Previous</a>
+                                    <a class="page-link" href="?page=<?= $current_page - 1 ?><?= isset($_GET['search']) ? '&search='.urlencode($_GET['search']) : '' ?><?= isset($_GET['filter_jenis']) ? '&filter_jenis='.urlencode($_GET['filter_jenis']) : '' ?>" tabindex="-1" <?= ($current_page <= 1) ? 'aria-disabled="true"' : '' ?>>Previous</a>
                                 </li>
                                 
                                 <?php for ($i = 1; $i <= $total_pages; $i++): ?>
                                 <li class="page-item <?= ($current_page == $i) ? 'active' : '' ?>">
-                                    <a class="page-link" href="?page=<?= $i ?>"><?= $i ?></a>
+                                    <a class="page-link" href="?page=<?= $i ?><?= isset($_GET['search']) ? '&search='.urlencode($_GET['search']) : '' ?><?= isset($_GET['filter_jenis']) ? '&filter_jenis='.urlencode($_GET['filter_jenis']) : '' ?>"><?= $i ?></a>
                                 </li>
                                 <?php endfor; ?>
                                 
                                 <li class="page-item <?= ($current_page >= $total_pages) ? 'disabled' : '' ?>">
-                                    <a class="page-link" href="?page=<?= $current_page + 1 ?>">Next</a>
+                                    <a class="page-link" href="?page=<?= $current_page + 1 ?><?= isset($_GET['search']) ? '&search='.urlencode($_GET['search']) : '' ?><?= isset($_GET['filter_jenis']) ? '&filter_jenis='.urlencode($_GET['filter_jenis']) : '' ?>">Next</a>
                                 </li>
                             </ul>
                         </nav>
                         <?php endif; ?>
                     </div>
                 </div>
+                  <!-- Footer -->
+                  <footer class="text-center py-4 mt-auto">
+                    <div>
+                        <span>&copy; 2025 Inventory Management System</span>
+                    </div>
+                </footer>
             </main>
         </div>
     </div>
+
+    <!-- Edit Report Modal -->
+    <?php if ($showEditModal && $editReport): ?>
+    <div class="modal fade show" id="editModal" tabindex="-1" style="display: block; background-color: rgba(0,0,0,0.5);" aria-modal="true" role="dialog">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Laporan #<?= htmlspecialchars($editReport['id']) ?></h5>
+                    <a href="index.php" class="btn-close" aria-label="Close"></a>
+                </div>
+                <form method="POST" action="index.php">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="edit_id" class="form-label">ID Laporan</label>
+                            <input type="number" class="form-control" id="edit_id" name="id" value="<?= htmlspecialchars($editReport['id']) ?>" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_jenis_laporan" class="form-label">Jenis Laporan</label>
+                            <select class="form-select" id="edit_jenis_laporan" name="jenis_laporan" required>
+                                <option value="">Pilih Jenis</option>
+                                <option value="stok" <?= $editReport['jenis_laporan'] == 'stok' ? 'selected' : '' ?>>Laporan Stok</option>
+                                <option value="transaksi" <?= $editReport['jenis_laporan'] == 'transaksi' ? 'selected' : '' ?>>Laporan Transaksi</option>
+                                <option value="keuangan" <?= $editReport['jenis_laporan'] == 'keuangan' ? 'selected' : '' ?>>Laporan Keuangan</option>
+                                <option value="penjualan" <?= $editReport['jenis_laporan'] == 'penjualan' ? 'selected' : '' ?>>Laporan Penjualan</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_tanggal_awal" class="form-label">Tanggal Awal</label>
+                            <input type="date" class="form-control" id="edit_tanggal_awal" name="tanggal_awal" value="<?= htmlspecialchars($editReport['tanggal_awal']) ?>" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_tanggal_akhir" class="form-label">Tanggal Akhir</label>
+                            <input type="date" class="form-control" id="edit_tanggal_akhir" name="tanggal_akhir" value="<?= htmlspecialchars($editReport['tanggal_akhir']) ?>" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_generated_by" class="form-label">Generated By</label>
+                            <input type="number" class="form-control" id="edit_generated_by" name="generated_by" value="<?= htmlspecialchars($editReport['generated_by']) ?>" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <a href="index.php" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" name="update_report" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
