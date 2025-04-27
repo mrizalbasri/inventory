@@ -1,60 +1,32 @@
 <?php
-// Sertakan berkas koneksi basis data Anda
-require_once '../config/database.php';
 
-// Mulai sesi untuk pesan
+// Start session for messages
 session_start();
 
-// Fungsi untuk mendapatkan semua kategori untuk dropdown
-function getCategories($database) {
-    $stmt = $database->prepare("SELECT DISTINCT kategori FROM produk WHERE kategori IS NOT NULL AND kategori != '' ORDER BY kategori");
-    $stmt->execute();
-    return $stmt->fetchAll(PDO::FETCH_COLUMN);
-}
+// Include your database connection file
+require_once '../config/database.php';
 
-// Tangani penyerahan formulir
+// Include your Product class file
+require_once 'Product.php';
+
+$productManager = new Product();
+$categories = $productManager->getCategories();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Dapatkan data formulir
-    $nama_produk = trim($_POST['nama_produk']);
-    $deskripsi = trim($_POST['deskripsi']);
-    $harga = floatval($_POST['harga']);
-    $kategori = trim($_POST['kategori']);
+    $nama_produk = $_POST['nama_produk'];
+    $deskripsi = $_POST['deskripsi'];
+    $harga = (float)$_POST['harga'];
+    $kategori = $_POST['kategori'];
     
-    // Periksa jika kategori baru dipilih
-    if ($kategori === 'lainnya' && !empty($_POST['kategori_baru'])) {
-        $kategori = trim($_POST['kategori_baru']);
-    }
+    $errors = $productManager->validateProductData($nama_produk, $harga);
     
-    // Validasi masukan
-    $errors = [];
-    if (empty($nama_produk)) {
-        $errors[] = "Nama produk harus diisi.";
-    }
-    if ($harga <= 0) {
-        $errors[] = "Harga harus lebih besar dari 0.";
-    }
-    
-    // Jika tidak ada kesalahan, lanjutkan dengan insert
     if (empty($errors)) {
-        try {
-            $stmt = $database->prepare("INSERT INTO produk (nama_produk, deskripsi, harga, kategori, created_at) VALUES (?, ?, ?, ?, NOW())");
-            $result = $stmt->execute([$nama_produk, $deskripsi, $harga, $kategori]);
-            
-            if ($result) {
-                $_SESSION['success_message'] = "Produk baru berhasil ditambahkan!";
-                header("Location: index.php");
-                exit;
-            } else {
-                $errors[] = "Gagal menambahkan produk.";
-            }
-        } catch (PDOException $e) {
-            $errors[] = "Kesalahan: " . $e->getMessage();
+        if ($productManager->addProduct($nama_produk, $deskripsi, $harga, $kategori)) {
+            header("Location: index.php");
+            exit;
         }
     }
 }
-
-// Dapatkan kategori untuk dropdown
-$categories = getCategories($database);
 ?>
 
 <!DOCTYPE html>
@@ -62,15 +34,15 @@ $categories = getCategories($database);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tambah Produk Baru</title>
+    <title>Tambah Produk</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
         :root {
-            --warna-utama: #4e73df;
-            --warna-sekunder: #858796;
-            --warna-sukses: #1cc88a;
-            --warna-info: #36b9cc;
+            --primary-color: #4e73df;
+            --secondary-color: #858796;
+            --success-color: #1cc88a;
+            --info-color: #36b9cc;
             --warning-color: #f6c23e;
             --danger-color: #e74a3b;
         }
@@ -107,18 +79,18 @@ $categories = getCategories($database);
         }
         
         .btn-primary {
-            background-color: var(--warna-utama);
-            border-color: var(--warna-utama);
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
         }
         
         .btn-secondary {
-            background-color: var(--warna-sekunder);
-            border-color: var(--warna-sekunder);
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
         }
         
         .btn-success {
-            background-color: var(--warna-sukses);
-            border-color: var(--warna-sukses);
+            background-color: var(--success-color);
+            border-color: var(--success-color);
         }
         
         .form-control:focus {
@@ -126,7 +98,7 @@ $categories = getCategories($database);
             box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
         }
         
-        /* Responsif seluler */
+        /* Mobile responsive */
         @media (max-width: 768px) {
             .sidebar {
                 display: none;
@@ -162,74 +134,71 @@ $categories = getCategories($database);
             <!-- Main Content -->
             <main class="col main-content">
                 <div class="d-sm-flex align-items-center justify-content-between mb-4">
-                    <h1 class="h3 mb-0">Tambah Produk Baru</h1>
+                    <h1 class="h3 mb-0">Tambah Produk</h1>
                     <a href="index.php" class="btn btn-secondary">
                         <i class="bi bi-arrow-left me-1"></i> Kembali
                     </a>
                 </div>
-                
+
                 <!-- Error Messages -->
                 <?php if(!empty($errors)): ?>
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <ul class="mb-0">
-                        <?php foreach($errors as $error): ?>
-                            <li><?php echo $error; ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <ul class="mb-0">
+                            <?php foreach($errors as $error): ?>
+                                <li><?php echo $error; ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
                 <?php endif; ?>
-                
+
                 <!-- Add Product Form -->
                 <div class="card shadow mb-4">
                     <div class="card-header py-3">
-                        <h6 class="m-0 font-weight-bold text-primary"><i class="bi bi-plus-circle me-1"></i> Formulir Tambah Produk</h6>
+                        <h6 class="m-0 font-weight-bold text-primary"><i class="bi bi-plus-circle me-1"></i> Form Tambah Produk</h6>
                     </div>
                     <div class="card-body">
                         <form method="POST" action="">
                             <div class="mb-3">
                                 <label for="nama_produk" class="form-label">Nama Produk <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="nama_produk" name="nama_produk" required value="<?php echo isset($nama_produk) ? htmlspecialchars($nama_produk) : ''; ?>">
+                                <input type="text" class="form-control" id="nama_produk" name="nama_produk" value="<?php echo isset($_POST['nama_produk']) ? htmlspecialchars($_POST['nama_produk']) : ''; ?>" required>
                             </div>
                             
                             <div class="mb-3">
-                                <label for="deskripsi" class="form-label">Deskripsi Produk</label>
-                                <textarea class="form-control" id="deskripsi" name="deskripsi" rows="4"><?php echo isset($deskripsi) ? htmlspecialchars($deskripsi) : ''; ?></textarea>
+                                <label for="deskripsi" class="form-label">Deskripsi</label>
+                                <textarea class="form-control" id="deskripsi" name="deskripsi" rows="4"><?php echo isset($_POST['deskripsi']) ? htmlspecialchars($_POST['deskripsi']) : ''; ?></textarea>
                             </div>
                             
                             <div class="mb-3">
-                                <label for="harga" class="form-label">Harga <span class="text-danger">*</span></label>
-                                <div class="input-group">
-                                    <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" id="harga" name="harga" step="0.01" min="0" required value="<?php echo isset($harga) ? htmlspecialchars($harga) : ''; ?>">
-                                </div>
+                                <label for="harga" class="form-label">Harga (Rp) <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="harga" name="harga" min="0" step="1000" value="<?php echo isset($_POST['harga']) ? htmlspecialchars($_POST['harga']) : '0'; ?>" required>
                             </div>
                             
                             <div class="mb-3">
                                 <label for="kategori" class="form-label">Kategori</label>
                                 <select class="form-select" id="kategori" name="kategori">
                                     <option value="">-- Pilih Kategori --</option>
-                                    <?php foreach ($categories as $cat): ?>
-                                        <option value="<?php echo htmlspecialchars($cat); ?>" <?php echo (isset($kategori) && $kategori == $cat) ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($cat); ?>
+                                    <?php foreach ($categories as $category): ?>
+                                        <option value="<?php echo htmlspecialchars($category); ?>" <?php echo (isset($_POST['kategori']) && $_POST['kategori'] === $category) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($category); ?>
                                         </option>
                                     <?php endforeach; ?>
-                                    <option value="lainnya" <?php echo (isset($kategori) && $kategori == 'lainnya') ? 'selected' : ''; ?>>Kategori Lainnya</option>
+                                    <option value="lainnya" <?php echo (isset($_POST['kategori']) && $_POST['kategori'] === 'lainnya') ? 'selected' : ''; ?>>Lainnya</option>
                                 </select>
                             </div>
                             
-                            <div class="mb-3" id="kategori_baru_container" style="display: <?php echo (isset($kategori) && $kategori == 'lainnya') ? 'block' : 'none'; ?>;">
-                                <label for="kategori_baru" class="form-label">Kategori Baru</label>
-                                <input type="text" class="form-control" id="kategori_baru" name="kategori_baru" value="<?php echo isset($_POST['kategori_baru']) ? htmlspecialchars($_POST['kategori_baru']) : ''; ?>">
+                            <div class="mb-3" id="other_category" style="display: none;">
+                                <label for="custom_category" class="form-label">Kategori Lainnya</label>
+                                <input type="text" class="form-control" id="custom_category" name="custom_category" value="<?php echo isset($_POST['custom_category']) ? htmlspecialchars($_POST['custom_category']) : ''; ?>">
                             </div>
                             
                             <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                                <button type="reset" class="btn btn-secondary me-md-2">
-                                    <i class="bi bi-x-circle me-1"></i> Reset
-                                </button>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-save me-1"></i> Simpan Produk
                                 </button>
+                                <a href="index.php" class="btn btn-secondary">
+                                    <i class="bi bi-x-circle me-1"></i> Batal
+                                </a>
                             </div>
                         </form>
                     </div>
@@ -238,35 +207,7 @@ $categories = getCategories($database);
         </div>
     </div>
 
-    <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Handle mobile menu toggle
-            const mobileMenuBtn = document.querySelector('.mobile-only .btn');
-            const sidebar = document.querySelector('.sidebar');
-            
-            if (mobileMenuBtn && sidebar) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    sidebar.style.display = sidebar.style.display === 'block' ? 'none' : 'block';
-                });
-            }
-            
-            // Handle "Kategori Lainnya" selection
-            const kategoriSelect = document.getElementById('kategori');
-            const kategoriBaru = document.getElementById('kategori_baru_container');
-            
-            if (kategoriSelect && kategoriBaru) {
-                kategoriSelect.addEventListener('change', function() {
-                    if (this.value === 'lainnya') {
-                        kategoriBaru.style.display = 'block';
-                    } else {
-                        kategoriBaru.style.display = 'none';
-                    }
-                });
-            }
-        });
-    </script>
+   
 </body>
 </html>

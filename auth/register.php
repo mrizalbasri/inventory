@@ -8,21 +8,111 @@ if(isset($_SESSION['user_id'])) {
     exit();
 }
 
+// Include database connection
+require_once '../config/database.php';
+
+// User registration class
+class UserRegistration {
+    private $db;
+    private $error_message = '';
+    private $success_message = '';
+    private $available_roles = [
+        'user' => 'Standard User',
+        'admin' => 'Administrator', 
+        'manager' => 'Manager',
+        'supervisor' => 'Supervisor',
+        'operator' => 'Operator'
+    ];
+    
+    public function __construct() {
+        // Get database connection
+        $database = new Database();
+        $this->db = $database->getConnection();
+    }
+    
+    public function getAvailableRoles() {
+        return $this->available_roles;
+    }
+    
+    public function register($username, $email, $password, $confirm_password, $selected_role) {
+        // Validate role
+        if (!array_key_exists($selected_role, $this->available_roles)) {
+            $selected_role = 'user'; // Default to user if invalid role
+        }
+        
+        // Basic validation
+        if (empty($username) || empty($email) || empty($password) || empty($confirm_password)) {
+            $this->error_message = 'All fields are required';
+            return false;
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $this->error_message = 'Please enter a valid email';
+            return false;
+        } elseif (strlen($password) < 6) {
+            $this->error_message = 'Password must be at least 6 characters long';
+            return false;
+        } elseif ($password !== $confirm_password) {
+            $this->error_message = 'Passwords do not match';
+            return false;
+        }
+        
+        try {
+            // Check if username already exists
+            $stmt = $this->db->prepare("SELECT COUNT(*) FROM users WHERE username = :username");
+            $stmt->bindParam(':username', $username);
+            $stmt->execute();
+            if ($stmt->fetchColumn() > 0) {
+                $this->error_message = 'Username already exists';
+                return false;
+            }
+            
+            // Check if email already exists
+            $stmt = $this->db->prepare("SELECT COUNT(*) FROM users WHERE email = :email");
+            $stmt->bindParam(':email', $email);
+            $stmt->execute();
+            if ($stmt->fetchColumn() > 0) {
+                $this->error_message = 'Email already exists';
+                return false;
+            }
+            
+            // Insert new user
+            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+            
+            $stmt = $this->db->prepare("INSERT INTO users (username, email, password, role, created_at) 
+                                      VALUES (:username, :email, :password, :role, NOW())");
+            $stmt->bindParam(':username', $username);
+            $stmt->bindParam(':email', $email);
+            $stmt->bindParam(':password', $hashed_password);
+            $stmt->bindParam(':role', $selected_role);
+            
+            if ($stmt->execute()) {
+                $this->success_message = 'Registration successful! You can now <a href="login.php">login</a>.';
+                return true;
+            } else {
+                $this->error_message = 'Registration failed. Please try again.';
+                return false;
+            }
+        } catch (PDOException $e) {
+            $this->error_message = 'Database error: ' . $e->getMessage();
+            return false;
+        }
+    }
+    
+    public function getErrorMessage() {
+        return $this->error_message;
+    }
+    
+    public function getSuccessMessage() {
+        return $this->success_message;
+    }
+}
+
 // Initialize variables
 $error_message = '';
 $success_message = '';
 
-// Include database connection
-require_once '../config/database.php';
-
-// Available roles with CRUD permissions
-$available_roles = [
-    'user' => 'Standard User',
-    'admin' => 'Administrator', 
-    'manager' => 'Manager',
-    'supervisor' => 'Supervisor',
-    'operator' => 'Operator'
-];
+// Create registration instance
+$registration = new UserRegistration();
+$available_roles = $registration->getAvailableRoles();
 
 // Process registration form
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -32,52 +122,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $confirm_password = trim($_POST['confirm_password']);
     $selected_role = isset($_POST['role']) ? trim($_POST['role']) : 'user';
     
-    // Validate role
-    if (!array_key_exists($selected_role, $available_roles)) {
-        $selected_role = 'user'; // Default to user if invalid role submitted
-    }
-    
-    // Basic validation
-    if (empty($username) || empty($email) || empty($password) || empty($confirm_password)) {
-        $error_message = 'All fields are required';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error_message = 'Please enter a valid email';
-    } elseif (strlen($password) < 6) {
-        $error_message = 'Password must be at least 6 characters long';
-    } elseif ($password !== $confirm_password) {
-        $error_message = 'Passwords do not match';
+    if ($registration->register($username, $email, $password, $confirm_password, $selected_role)) {
+        $success_message = $registration->getSuccessMessage();
     } else {
-        // Check if username already exists
-        $stmt = $database->prepare("SELECT COUNT(*) FROM users WHERE username = :username");
-        $stmt->bindParam(':username', $username);
-        $stmt->execute();
-        if ($stmt->fetchColumn() > 0) {
-            $error_message = 'Username already exists';
-        } else {
-            // Check if email already exists
-            $stmt = $database->prepare("SELECT COUNT(*) FROM users WHERE email = :email");
-            $stmt->bindParam(':email', $email);
-            $stmt->execute();
-            if ($stmt->fetchColumn() > 0) {
-                $error_message = 'Email already exists';
-            } else {
-                // Insert new user
-                $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-                
-                $stmt = $database->prepare("INSERT INTO users (username, email, password, role, created_at) 
-                                          VALUES (:username, :email, :password, :role, NOW())");
-                $stmt->bindParam(':username', $username);
-                $stmt->bindParam(':email', $email);
-                $stmt->bindParam(':password', $hashed_password);
-                $stmt->bindParam(':role', $selected_role);
-                
-                if ($stmt->execute()) {
-                    $success_message = 'Registration successful! You can now <a href="login.php">login</a>.';
-                } else {
-                    $error_message = 'Registration failed. Please try again.';
-                }
-            }
-        }
+        $error_message = $registration->getErrorMessage();
     }
 }
 ?>
@@ -154,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="card-body p-4">
                 <?php if(!empty($error_message)): ?>
                 <div class="alert alert-danger" role="alert">
-                    <?php echo $error_message; ?>
+                    <?php echo htmlspecialchars($error_message); ?>
                 </div>
                 <?php endif; ?>
                 

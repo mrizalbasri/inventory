@@ -5,6 +5,9 @@ session_start();
 // Database connection with PDO
 require_once '../config/database.php';
 
+// Create database connection
+$db = new Database();
+$database = $db->getConnection();
 
 // Check if transaction ID is provided
 if (!isset($_GET['id']) || empty($_GET['id'])) {

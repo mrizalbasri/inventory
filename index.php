@@ -2,60 +2,97 @@
 // Start the session
 session_start();
 
-
-
-// Include your existing database connection file
+// Include database connection file
 require_once 'config/database.php';
 
-// Get total products
-$stmt = $database->query("SELECT COUNT(*) as total FROM produk");
-$total_products = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+// Create Inventory class to handle all dashboard data retrieval
+class InventoryDashboard {
+    private $db;
+    
+    public function __construct(Database $database) {
+        $this->db = $database->getConnection();
+    }
+    
+    public function getTotalProducts() {
+        $stmt = $this->db->query("SELECT COUNT(*) as total FROM produk");
+        return $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    }
+    
+    public function getTotalStockValue() {
+        $stmt = $this->db->query("SELECT SUM(p.harga * s.jumlah_stok) as total_value 
+                        FROM produk p 
+                        JOIN stok s ON p.id = s.produk_id");
+        return $stmt->fetch(PDO::FETCH_ASSOC)['total_value'];
+    }
+    
+    public function getLowStockCount() {
+        $stmt = $this->db->query("SELECT COUNT(*) as total FROM stok WHERE jumlah_stok < 20");
+        return $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    }
+    
+    public function getRecentTransactions() {
+        $stmt = $this->db->query("SELECT COUNT(*) as total FROM transaksi 
+                        WHERE tanggal_transaksi >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+        return $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    }
+    
+    public function getTopProducts() {
+        $stmt = $this->db->query("SELECT p.nama_produk, p.harga, s.jumlah_stok, (p.harga * s.jumlah_stok) as total_value 
+                        FROM produk p 
+                        JOIN stok s ON p.id = s.produk_id 
+                        ORDER BY total_value DESC 
+                        LIMIT 5");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
+    public function getLatestTransactions() {
+        $stmt = $this->db->query("SELECT t.id, p.nama_produk, t.jenis_transaksi, t.jumlah, t.tanggal_transaksi, u.username 
+                        FROM transaksi t 
+                        JOIN produk p ON t.produk_id = p.id 
+                        LEFT JOIN users u ON t.created_by = u.id 
+                        ORDER BY t.tanggal_transaksi DESC 
+                        LIMIT 5");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
+    public function getStockMovements() {
+        $stockIn = $this->db->query("SELECT SUM(jumlah) as total_in FROM transaksi WHERE jenis_transaksi = 'masuk'");
+        $stockOut = $this->db->query("SELECT SUM(jumlah) as total_out FROM transaksi WHERE jenis_transaksi = 'keluar'");
+        
+        return [
+            'total_in' => $stockIn->fetch(PDO::FETCH_ASSOC)['total_in'],
+            'total_out' => $stockOut->fetch(PDO::FETCH_ASSOC)['total_out']
+        ];
+    }
+    
+    public function getStockByCategory() {
+        $stmt = $this->db->query("SELECT p.kategori, COUNT(*) as count, SUM(s.jumlah_stok) as total_stock 
+                             FROM produk p 
+                             JOIN stok s ON p.id = s.produk_id 
+                             GROUP BY p.kategori");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
 
-// Get total stock value
-$stmt = $database->query("SELECT SUM(p.harga * s.jumlah_stok) as total_value 
-                    FROM produk p 
-                    JOIN stok s ON p.id = s.produk_id");
-$total_stock_value = $stmt->fetch(PDO::FETCH_ASSOC)['total_value'];
+// Initialize database connection
+$database = new Database();
 
-// Get low stock items (less than 20)
-$stmt = $database->query("SELECT COUNT(*) as total FROM stok WHERE jumlah_stok < 20");
-$low_stock_count = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+// Create dashboard instance
+$dashboard = new InventoryDashboard($database);
 
-// Get transactions for last 7 days
-$stmt = $database->query("SELECT COUNT(*) as total FROM transaksi 
-                    WHERE tanggal_transaksi >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
-$recent_transactions = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+// Get all dashboard data
+$total_products = $dashboard->getTotalProducts();
+$total_stock_value = $dashboard->getTotalStockValue();
+$low_stock_count = $dashboard->getLowStockCount();
+$recent_transactions = $dashboard->getRecentTransactions();
+$top_products = $dashboard->getTopProducts();
+$latest_transactions = $dashboard->getLatestTransactions();
 
-// Get top 5 products by stock value
-$stmt = $database->query("SELECT p.nama_produk, p.harga, s.jumlah_stok, (p.harga * s.jumlah_stok) as total_value 
-                    FROM produk p 
-                    JOIN stok s ON p.id = s.produk_id 
-                    ORDER BY total_value DESC 
-                    LIMIT 5");
-$top_products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stock_movements = $dashboard->getStockMovements();
+$total_stock_in = $stock_movements['total_in'];
+$total_stock_out = $stock_movements['total_out'];
 
-// Get latest transactions
-$stmt = $database->query("SELECT t.id, p.nama_produk, t.jenis_transaksi, t.jumlah, t.tanggal_transaksi, u.username 
-                    FROM transaksi t 
-                    JOIN produk p ON t.produk_id = p.id 
-                    LEFT JOIN users u ON t.created_by = u.id 
-                    ORDER BY t.tanggal_transaksi DESC 
-                    LIMIT 5");
-$latest_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Get stock movements (in vs out)
-$stmt = $database->query("SELECT SUM(jumlah) as total_in FROM transaksi WHERE jenis_transaksi = 'masuk'");
-$total_stock_in = $stmt->fetch(PDO::FETCH_ASSOC)['total_in'];
-
-$stmt = $database->query("SELECT SUM(jumlah) as total_out FROM transaksi WHERE jenis_transaksi = 'keluar'");
-$total_stock_out = $stmt->fetch(PDO::FETCH_ASSOC)['total_out'];
-
-// Get stock by category
-$stmt = $database->query("SELECT p.kategori, COUNT(*) as count, SUM(s.jumlah_stok) as total_stock 
-                         FROM produk p 
-                         JOIN stok s ON p.id = s.produk_id 
-                         GROUP BY p.kategori");
-$categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$categories = $dashboard->getStockByCategory();
 ?>
 
 <!DOCTYPE html>

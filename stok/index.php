@@ -1,157 +1,86 @@
 <?php
-
 // Start session for messages
 session_start();
-// Database connection using PDO
+
+// Include database configuration
 require_once "../config/database.php";
 
-// Function to get all stock items
-function getAllStock($database) {
-    try {
-        $stmt = $database->prepare("SELECT s.id, s.produk_id, s.jumlah_stok, s.updated_at, p.nama_produk 
-                              FROM stok s 
-                              JOIN produk p ON s.produk_id = p.id
-                              ORDER BY s.jumlah_stok ASC"); // Order by stock quantity to prioritize low stock
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch(PDOException $e) {
-        echo "Error: " . $e->getMessage();
-        return [];
-    }
-}
+// Include Stock class
+require_once "Stock.php"; // Adjust path as needed based on your file structure
 
-// Function to get stock count
-function getStockCount($database) {
-    try {
-        $stmt = $database->prepare("SELECT COUNT(*) as count FROM stok");
-        $stmt->execute();
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['count'];
-    } catch(PDOException $e) {
-        return 0;
-    }
-}
+// Create Database instance
+$dbInstance = new Database();
+$database = $dbInstance->getConnection();
 
-// Function to get total products
-function getProductCount($database) {
-    try {
-        $stmt = $database->prepare("SELECT COUNT(*) as count FROM produk");
-        $stmt->execute();
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['count'];
-    } catch(PDOException $e) {
-        return 0;
-    }
-}
+// Create Stock instance
+$stockManager = new Stock($database);
 
-// Function to get low stock items (less than 10)
-function getLowStockCount($database) {
-    try {
-        $stmt = $database->prepare("SELECT COUNT(*) as count FROM stok WHERE jumlah_stok < 10");
-        $stmt->execute();
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['count'];
-    } catch(PDOException $e) {
-        return 0;
+// Handle form submissions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Handle add new stock item
+    if (isset($_POST['add_stock'])) {
+        $produk_id = $_POST['produk_id'];
+        $jumlah_stok = $_POST['jumlah_stok'];
+        
+        if ($stockManager->addStock($produk_id, $jumlah_stok)) {
+            $_SESSION['success'] = "Stock added successfully!";
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit();
+        } else {
+            $_SESSION['error'] = "Error adding stock";
+        }
     }
-}
-
-// Function to get total stock value
-function getTotalStockValue($database) {
-    try {
-        $stmt = $database->prepare("SELECT SUM(s.jumlah_stok * p.harga) as total_value 
-                               FROM stok s 
-                               JOIN produk p ON s.produk_id = p.id");
-        $stmt->execute();
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['total_value'] ?: 0;
-    } catch(PDOException $e) {
-        return 0;
+    
+    // Handle update stock
+    if (isset($_POST['update_stock'])) {
+        $id = $_POST['id'];
+        $jumlah_stok = $_POST['jumlah_stok'];
+        
+        if ($stockManager->updateStock($id, $jumlah_stok)) {
+            $_SESSION['success'] = "Stock updated successfully!";
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit();
+        } else {
+            $_SESSION['error'] = "Error updating stock";
+        }
+    }
+    
+    // Handle delete stock
+    if (isset($_POST['delete_stock'])) {
+        $id = $_POST['id'];
+        
+        if ($stockManager->deleteStock($id)) {
+            $_SESSION['success'] = "Stock deleted successfully!";
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit();
+        } else {
+            $_SESSION['error'] = "Error deleting stock";
+        }
     }
 }
 
 // Get data for displaying
-$stockItems = getAllStock($database);
-$stockCount = getStockCount($database);
-$productCount = getProductCount($database);
-$lowStockCount = getLowStockCount($database);
-$totalStockValue = getTotalStockValue($database);
+$stockItems = $stockManager->getAllStock();
+$stockCount = $stockManager->getStockCount();
+$productCount = $stockManager->getProductCount();
+$lowStockCount = $stockManager->getLowStockCount();
+$totalStockValue = $stockManager->getTotalStockValue();
+$products = $stockManager->getAllProducts();
 
-// Handle add new stock item
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_stock'])) {
-    $produk_id = $_POST['produk_id'];
-    $jumlah_stok = $_POST['jumlah_stok'];
-    
-    try {
-        $stmt = $database->prepare("INSERT INTO stok (produk_id, jumlah_stok) VALUES (?, ?)");
-        $stmt->execute([$produk_id, $jumlah_stok]);
-        $success_message = "Stock added successfully!";
-        // Redirect to refresh the page
-        header("Location: " . $_SERVER['PHP_SELF'] . "?success=added");
-        exit();
-    } catch(PDOException $e) {
-        $error_message = "Error adding stock: " . $e->getMessage();
-    }
-}
+// Get flash messages
+$success_message = isset($_SESSION['success']) ? $_SESSION['success'] : "";
 
-// Handle update stock
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_stock'])) {
-    $id = $_POST['id'];
-    $jumlah_stok = $_POST['jumlah_stok'];
-    
-    try {
-        $stmt = $database->prepare("UPDATE stok SET jumlah_stok = ? WHERE id = ?");
-        $stmt->execute([$jumlah_stok, $id]);
-        // Redirect to refresh the page
-        header("Location: " . $_SERVER['PHP_SELF'] . "?success=updated");
-        exit();
-    } catch(PDOException $e) {
-        $error_message = "Error updating stock: " . $e->getMessage();
-    }
-}
+// Clear session messages
+unset($_SESSION['success']);
+unset($_SESSION['error']);
 
-// Handle delete stock
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_stock'])) {
-    $id = $_POST['id'];
-    
-    try {
-        $stmt = $database->prepare("DELETE FROM stok WHERE id = ?");
-        $stmt->execute([$id]);
-        // Redirect to refresh the page
-        header("Location: " . $_SERVER['PHP_SELF'] . "?success=deleted");
-        exit();
-    } catch(PDOException $e) {
-        $error_message = "Error deleting stock: " . $e->getMessage();
-    }
-}
 
-// Get all products for dropdown
-function getAllProducts($database) {
-    try {
-        $stmt = $database->prepare("SELECT id, nama_produk FROM produk ORDER BY nama_produk ASC");
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch(PDOException $e) {
-        return [];
-    }
-}
-$products = getAllProducts($database);
 
-// Check for success message from query parameters
-$success_message = "";
-if (isset($_GET['success'])) {
-    switch ($_GET['success']) {
-        case 'added':
-            $success_message = "Stock added successfully!";
-            break;
-        case 'updated':
-            $success_message = "Stock updated successfully!";
-            break;
-        case 'deleted':
-            $success_message = "Stock deleted successfully!";
-            break;
-    }
-}
+// Apply filters if any
+$search = isset($_GET['search']) ? $_GET['search'] : '';
+$stockLevel = isset($_GET['stock_level']) ? $_GET['stock_level'] : '';
+$filteredItems = $stockManager->filterStockItems($stockItems, $search, $stockLevel);
+
 ?>
 
 <!DOCTYPE html>
@@ -164,127 +93,10 @@ if (isset($_GET['success'])) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        :root {
-            --primary-color: #4e73df;
-            --secondary-color: #858796;
-            --success-color: #1cc88a;
-            --info-color: #36b9cc;
-            --warning-color: #f6c23e;
-            --danger-color: #e74a3b;
-        }
-        
-        body {
-            font-family: 'Nunito', sans-serif;
-            background-color: #f8f9fc;
-        }
-        
-        .dashboard-card {
-            border-radius: 0.5rem;
-            border-left: 0.25rem solid;
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-            margin-bottom: 1.5rem;
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-        
-        .dashboard-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 0.5rem 2rem 0 rgba(58, 59, 69, 0.2);
-        }
-        
-        .card-primary {
-            border-left-color: var(--primary-color);
-        }
-        
-        .card-success {
-            border-left-color: var(--success-color);
-        }
-        
-        .card-warning {
-            border-left-color: var(--warning-color);
-        }
-        
-        .card-danger {
-            border-left-color: var(--danger-color);
-        }
-        
-        .card-info {
-            border-left-color: var(--info-color);
-        }
-        
-        .card-icon {
-            color: #dddfeb;
-        }
-        
-        .card-header {
-            background-color: #f8f9fc;
-            border-bottom: 1px solid #e3e6f0;
-        }
-        
-        .main-content {
-            padding: 1.5rem;
-        }
-        
-        .table-container {
-            background-color: white;
-            border-radius: 0.35rem;
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-        }
-        
-        .stock-table thead th {
-            font-weight: 600;
-            background-color: #f8f9fc;
-        }
-        
-        .btn-circle {
-            border-radius: 100%;
-            width: 2.5rem;
-            height: 2.5rem;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .btn-circle.btn-sm {
-            width: 2rem;
-            height: 2rem;
-        }
-        
-        .alert-dismissible {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-        }
-        
-        .stock-badge {
-            font-size: 85%;
-            font-weight: 600;
-            padding: 0.35em 0.65em;
-        }
-        
-        .progress {
-            height: 0.5rem;
-        }
-        
-        footer {
-            font-size: 0.8rem;
-            color: var(--secondary-color);
-        }
-        
-        /* Filter and search elements */
-        .filter-row {
-            background-color: #fff;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-            padding: 1rem;
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-        }
-        
-        
-    </style>
-</head>
-<body>
+    <link href="../styles.css" rel="stylesheet">
+</head >
+
+<body class="stock">
     <div class="container-fluid">
         <div class="row">
             <!-- Sidebar -->
@@ -309,12 +121,7 @@ if (isset($_GET['success'])) {
                 <?php endif; ?>
                 
                 <!-- Error Alert -->
-                <?php if (isset($error_message)): ?>
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="fas fa-exclamation-circle me-2"></i> <?= $error_message ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                <?php endif; ?>
+    
 
                 <!-- Information Cards -->
                 <div class="row">
@@ -441,35 +248,7 @@ if (isset($_GET['success'])) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php 
-                                    // Apply simple filtering logic
-                                    $filteredItems = $stockItems;
-                                    
-                                    // Filter by search term
-                                    if (isset($_GET['search']) && !empty($_GET['search'])) {
-                                        $search = strtolower($_GET['search']);
-                                        $filteredItems = array_filter($filteredItems, function($item) use ($search) {
-                                            return strpos(strtolower($item['nama_produk']), $search) !== false;
-                                        });
-                                    }
-                                    
-                                    // Filter by stock level
-                                    if (isset($_GET['stock_level']) && !empty($_GET['stock_level'])) {
-                                        $stockLevel = $_GET['stock_level'];
-                                        $filteredItems = array_filter($filteredItems, function($item) use ($stockLevel) {
-                                            if ($stockLevel == 'low') {
-                                                return $item['jumlah_stok'] < 10;
-                                            } elseif ($stockLevel == 'medium') {
-                                                return $item['jumlah_stok'] >= 10 && $item['jumlah_stok'] < 20;
-                                            } elseif ($stockLevel == 'good') {
-                                                return $item['jumlah_stok'] >= 20;
-                                            }
-                                            return true;
-                                        });
-                                    }
-                                    
-                                    if (empty($filteredItems)): 
-                                    ?>
+                                    <?php if (empty($filteredItems)): ?>
                                         <tr>
                                             <td colspan="6" class="text-center py-4">
                                                 <i class="fas fa-search fa-2x mb-3 text-muted"></i>
@@ -628,7 +407,7 @@ if (isset($_GET['success'])) {
                                 <li class="page-item"><a class="page-link" href="#">2</a></li>
                                 <li class="page-item"><a class="page-link" href="#">3</a></li>
                                 <li class="page-item">
-                                    <a class="page-link" href="#">
+                                    <a class="page-link" href="#"><a class="page-link" href="#">
                                         <i class="fas fa-angle-right"></i>
                                     </a>
                                 </li>
@@ -639,9 +418,11 @@ if (isset($_GET['success'])) {
                 </div>
                 
                 <!-- Footer -->
-                <footer class="text-center py-4 mt-auto">
-                    <div>
-                        <span>&copy; 2025 Inventory Management System</span>
+                <footer class="mt-5 pb-3">
+                    <div class="container-fluid">
+                        <div class="text-center">
+                            <span>Copyright &copy; Inventory Management System 2025</span>
+                        </div>
                     </div>
                 </footer>
             </main>
@@ -649,32 +430,30 @@ if (isset($_GET['success'])) {
     </div>
 
     <!-- Add Stock Modal -->
-
-    <!-- Add Stock Modal -->
     <div class="modal fade" id="addStockModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
+                <div class="modal-header">
                     <h5 class="modal-title">
-                        <i class="fas fa-plus-circle me-2"></i>Add New Stock
+                        <i class="fas fa-plus me-2 text-primary"></i>Add New Stock
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <form method="post">
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label for="produkId" class="form-label">Product</label>
-                            <select class="form-select" id="produkId" name="produk_id" required>
-                                <option value="">-- Select Product --</option>
-                                <?php foreach ($products as $product): ?>
+                            <label for="produk_id" class="form-label">Product</label>
+                            <select class="form-select" id="produk_id" name="produk_id" required>
+                                <option value="">Select a product</option>
+                                <?php foreach($products as $product): ?>
                                     <option value="<?= $product['id'] ?>"><?= $product['nama_produk'] ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label for="jumlahStok" class="form-label">Quantity</label>
+                            <label for="jumlah_stok" class="form-label">Quantity</label>
                             <div class="input-group">
-                                <input type="number" class="form-control" id="jumlahStok" name="jumlah_stok" required min="1" value="1">
+                                <input type="number" class="form-control" id="jumlah_stok" name="jumlah_stok" required min="0">
                                 <span class="input-group-text">units</span>
                             </div>
                         </div>
@@ -682,7 +461,7 @@ if (isset($_GET['success'])) {
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" name="add_stock" class="btn btn-primary">
-                            <i class="fas fa-plus me-1"></i>Add Stock
+                            <i class="fas fa-save me-1"></i>Add Stock
                         </button>
                     </div>
                 </form>
@@ -690,6 +469,8 @@ if (isset($_GET['success'])) {
         </div>
     </div>
 
-    <!-- Bootstrap JS Bundle with Popper -->
+    <!-- Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    
 </body>
 </html>

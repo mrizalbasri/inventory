@@ -4,56 +4,44 @@ session_start();
 
 // Database connection with PDO
 require_once '../config/database.php';
+require_once 'Transaction.php';
 
-// Check if user is logged in
-// if (!isset($_SESSION['user_id'])) {
-//     header("Location: login.php");
-//     exit();
-// }
+// Initialize Transaction object
+$db = new Database();
+$database = $db->getConnection();
+$transactionManager = new Transaction($database);
 
-// Get all transactions for display with additional information
+// Check if we need to apply filters
+$dateStart = isset($_GET['date_start']) ? $_GET['date_start'] : null;
+$dateEnd = isset($_GET['date_end']) ? $_GET['date_end'] : null;
+$type = isset($_GET['type']) ? $_GET['type'] : null;
+
+// Get transactions based on filters or get all
 try {
-    $stmt = $database->query("SELECT t.*, p.nama_produk, p.harga, u.username 
-    FROM transaksi t 
-    LEFT JOIN produk p ON t.produk_id = p.id
-    LEFT JOIN users u ON t.created_by = u.id 
-    ORDER BY t.tanggal_transaksi DESC, t.id DESC");
-    $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $error_message = "Error loading transactions: " . $e->getMessage();
+    if ($dateStart || $dateEnd || $type) {
+        $transactions = $transactionManager->getFilteredTransactions($dateStart, $dateEnd, $type);
+    } else {
+        $transactions = $transactionManager->getAllTransactions();
+    }
+} catch (Exception $e) {
+    $error_message = $e->getMessage();
 }
 
 // Calculate transaction statistics
-$total_masuk = 0;
-$total_keluar = 0;
-$total_value_masuk = 0;
-$total_value_keluar = 0;
-
-if (isset($transactions) && count($transactions) > 0) {
-    foreach ($transactions as $transaction) {
-        if ($transaction['jenis_transaksi'] == 'masuk') {
-            $total_masuk += $transaction['jumlah'];
-            $total_value_masuk += ($transaction['jumlah'] * $transaction['harga']);
-        } else {
-            $total_keluar += $transaction['jumlah'];
-            $total_value_keluar += ($transaction['jumlah'] * $transaction['harga']);
-        }
-    }
+try {
+    $stats = $transactionManager->calculateStatistics();
+    $total_masuk = $stats['total_masuk'];
+    $total_keluar = $stats['total_keluar'];
+    $total_value_masuk = $stats['total_value_masuk'];
+    $total_value_keluar = $stats['total_value_keluar'];
+} catch (Exception $e) {
+    $error_message = $e->getMessage();
 }
 
-// Get transactions for current month
-$current_month = date('m');
-$current_year = date('Y');
+// Get monthly statistics
 try {
-    $stmt = $database->prepare("SELECT SUM(CASE WHEN jenis_transaksi = 'masuk' THEN 1 ELSE 0 END) as count_masuk,
-                              SUM(CASE WHEN jenis_transaksi = 'keluar' THEN 1 ELSE 0 END) as count_keluar
-                              FROM transaksi 
-                              WHERE MONTH(tanggal_transaksi) = :month AND YEAR(tanggal_transaksi) = :year");
-    $stmt->bindParam(':month', $current_month);
-    $stmt->bindParam(':year', $current_year);
-    $stmt->execute();
-    $monthly_stats = $stmt->fetch(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
+    $monthly_stats = $transactionManager->getMonthlyStatistics();
+} catch (Exception $e) {
     $error_message = "Error calculating statistics: " . $e->getMessage();
 }
 
@@ -68,10 +56,12 @@ if (isset($_SESSION['error_message'])) {
     unset($_SESSION['error_message']);
 }
 
-// Check if we need to handle success message from add_transaksi.php
+// Check if we need to handle success message from add transaction
 if (isset($_GET['success']) && $_GET['success'] == 1) {
     $success_message = "Transaction successfully recorded!";
 }
+
+// Rest of your HTML and display code remains the same
 ?>
 
 <!DOCTYPE html>
@@ -311,14 +301,6 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                 <div class="transactions-list">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h3 class="mb-0">Transaction History</h3>
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
-                                <i class="bi bi-printer"></i> Print
-                            </button>
-                            <a href="export_transaksi.php" class="btn btn-sm btn-outline-secondary">
-                                <i class="bi bi-download"></i> Export
-                            </a>
-                        </div>
                     </div>
                     
                     <?php if(isset($transactions) && count($transactions) > 0): ?>

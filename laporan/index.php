@@ -2,6 +2,9 @@
 require_once '../config/database.php';
 include 'report_model.php';
 
+$db = new Database();
+$database = $db->getConnection();
+$reportModel = new ReportModel($database);
 // Initialize Report Model
 $reportModel = new ReportModel($database);
 
@@ -399,9 +402,6 @@ $paginatedReports = array_slice($reports, $offset, $records_per_page);
                                         <td><?= htmlspecialchars(date('d M Y', strtotime($report['tanggal_akhir']))) ?></td>
                                         <td><?= htmlspecialchars($report['generated_by']) ?></td>
                                         <td class="text-center">
-                                            <a href="view.php?id=<?= $report['id'] ?>" class="btn btn-sm btn-info">
-                                                <i class="bi bi-eye"></i>
-                                            </a>
                                             <a href="index.php?edit_id=<?= $report['id'] ?>" class="btn btn-sm btn-warning">
                                                 <i class="bi bi-pencil"></i>
                                             </a>

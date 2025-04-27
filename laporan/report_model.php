@@ -20,9 +20,10 @@ class ReportModel {
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
     
+  
     public function createReport($id, $jenis_laporan, $tanggal_awal, $tanggal_akhir, $generated_by) {
-        $query = "INSERT INTO reports (id, jenis_laporan, tanggal_awal, tanggal_akhir, generated_by) 
-                  VALUES (:id, :jenis_laporan, :tanggal_awal, :tanggal_akhir, :generated_by)";
+        $query = "INSERT INTO laporan (id, jenis_laporan, tanggal_awal, tanggal_akhir, generated_by) 
+                 VALUES (:id, :jenis_laporan, :tanggal_awal, :tanggal_akhir, :generated_by)";
         
         $stmt = $this->db->prepare($query);
         $stmt->bindParam(':id', $id, PDO::PARAM_INT);
@@ -31,9 +32,18 @@ class ReportModel {
         $stmt->bindParam(':tanggal_akhir', $tanggal_akhir, PDO::PARAM_STR);
         $stmt->bindParam(':generated_by', $generated_by, PDO::PARAM_INT);
         
-        return $stmt->execute();
+        try {
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            // Cek jika error adalah duplikasi ID
+            if ($e->getCode() == '23000') {
+                $_SESSION['error'] = "ID laporan sudah digunakan! Gunakan ID lain.";
+                return false;
+            }
+            // Lempar kembali exception jika bukan masalah duplikasi
+            throw $e;
+        }
     }
-    
     public function updateReport($id, $jenis_laporan, $tanggal_awal, $tanggal_akhir, $generated_by) {
         $query = "UPDATE laporan 
         SET jenis_laporan = :jenis_laporan, 

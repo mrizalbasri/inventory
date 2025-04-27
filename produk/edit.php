@@ -5,80 +5,37 @@ require_once '../config/database.php';
 // Start session for messages
 session_start();
 
-// Function to get all categories for dropdown
-function getCategories($database) {
-    $stmt = $database->prepare("SELECT DISTINCT kategori FROM produk WHERE kategori IS NOT NULL AND kategori != '' ORDER BY kategori");
-    $stmt->execute();
-    return $stmt->fetchAll(PDO::FETCH_COLUMN);
-}
+require_once 'Product.php';
 
-// Check if ID is provided
-if (!isset($_GET['id']) || empty($_GET['id'])) {
-    $_SESSION['error_message'] = "ID produk tidak valid.";
-    header("Location: index.php");
-    exit;
-}
+$productManager = new Product();
 
-$id = intval($_GET['id']);
+$id = $_GET['id'];
+$product = $productManager->getProductById($id);
+$categories = $productManager->getCategories();
 
-// Handle form submission
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Get form data
-    $nama_produk = trim($_POST['nama_produk']);
-    $deskripsi = trim($_POST['deskripsi']);
-    $harga = floatval($_POST['harga']);
-    $kategori = trim($_POST['kategori']);
+    $nama_produk = $_POST['nama_produk'];
+    $deskripsi = $_POST['deskripsi'];
+    $harga = (float)$_POST['harga'];
     
-    // Validate input
-    $errors = [];
-    
-    if (empty($nama_produk)) {
-        $errors[] = "Nama produk harus diisi.";
+    // Handle kategori
+    $kategori = $_POST['kategori'];
+    // Jika "lainnya" dipilih, gunakan nilai custom_category
+    if ($kategori === 'lainnya' && !empty($_POST['custom_category'])) {
+        $kategori = $_POST['custom_category'];
     }
     
-    if ($harga <= 0) {
-        $errors[] = "Harga harus lebih besar dari 0.";
-    }
+    $errors = $productManager->validateProductData($nama_produk, $harga);
     
-    // If no errors, proceed with update
     if (empty($errors)) {
-        try {
-            $stmt = $database->prepare("UPDATE produk SET nama_produk = ?, deskripsi = ?, harga = ?, kategori = ?, updated_at = NOW() WHERE id = ?");
-            
-            $result = $stmt->execute([$nama_produk, $deskripsi, $harga, $kategori, $id]);
-            
-            if ($result) {
-                $_SESSION['success_message'] = "Produk berhasil diperbarui!";
-                header("Location: index.php");
-                exit;
-            } else {
-                $errors[] = "Gagal memperbarui produk.";
-            }
-        } catch (PDOException $e) {
-            $errors[] = "Error: " . $e->getMessage();
+        if ($productManager->addProduct($nama_produk, $deskripsi, $harga, $kategori)) {
+            $_SESSION['success_message'] = "Produk berhasil ditambahkan!";
+            header("Location: index.php");
+            exit;
         }
     }
 }
-
-// Get product data for editing
-try {
-    $stmt = $database->prepare("SELECT * FROM produk WHERE id = ?");
-    $stmt->execute([$id]);
-    $product = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$product) {
-        $_SESSION['error_message'] = "Produk tidak ditemukan.";
-        header("Location: index.php");
-        exit;
-    }
-} catch (PDOException $e) {
-    $_SESSION['error_message'] = "Error: " . $e->getMessage();
-    header("Location: index.php");
-    exit;
-}
-
-// Get categories for dropdown
-$categories = getCategories($database);
 ?>
 
 <!DOCTYPE html>
@@ -173,7 +130,7 @@ $categories = getCategories($database);
 <body>
     <!-- Mobile Menu Toggle -->
     <div class="mobile-only mt-3 ms-3">
-        <a href="#" class="btn btn-primary">
+        <a href="index.php" class="btn btn-primary">
             <i class="bi bi-list"></i> Menu
         </a>
     </div>
@@ -211,6 +168,13 @@ $categories = getCategories($database);
                     </div>
                     <div class="card-body">
                         <form method="POST" action="">
+
+                        <div class="mb-3">
+    <label for="id" class="form-label">ID Produk <span class="text-danger">*</span></label>
+    <input type="number" class="form-control" id="id" name="id" value="<?php echo isset($_POST['id']) ? htmlspecialchars($_POST['id']) : ''; ?>" required>
+    <small class="text-muted">Masukkan ID unik untuk produk ini</small>
+</div>
+
                             <div class="mb-3">
                                 <label for="nama_produk" class="form-label">Nama Produk <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" id="nama_produk" name="nama_produk" value="<?php echo htmlspecialchars($product['nama_produk']); ?>" required>
@@ -225,19 +189,25 @@ $categories = getCategories($database);
                                 <label for="harga" class="form-label">Harga (Rp) <span class="text-danger">*</span></label>
                                 <input type="number" class="form-control" id="harga" name="harga" min="0" step="1000" value="<?php echo htmlspecialchars($product['harga']); ?>" required>
                             </div>
-                            
+
+
                             <div class="mb-3">
-                                <label for="kategori" class="form-label">Kategori</label>
-                                <select class="form-select" id="kategori" name="kategori">
-                                    <option value="">-- Pilih Kategori --</option>
-                                    <?php foreach ($categories as $category): ?>
-                                        <option value="<?php echo htmlspecialchars($category); ?>" <?php echo ($product['kategori'] === $category) ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($category); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                    <option value="lainnya" <?php echo (!in_array($product['kategori'], $categories) && !empty($product['kategori'])) ? 'selected' : ''; ?>>Lainnya</option>
-                                </select>
-                            </div>
+    <label for="kategori" class="form-label">Kategori</label>
+    <select class="form-select" id="kategori" name="kategori">
+        <option value="">-- Pilih Kategori --</option>
+        <?php foreach ($categories as $category): ?>
+            <option value="<?php echo htmlspecialchars($category); ?>" <?php echo (isset($_POST['kategori']) && $_POST['kategori'] === $category) ? 'selected' : ''; ?>>
+                <?php echo htmlspecialchars($category); ?>
+            </option>
+        <?php endforeach; ?>
+        <option value="lainnya" <?php echo (isset($_POST['kategori']) && $_POST['kategori'] === 'lainnya') ? 'selected' : ''; ?>>Lainnya</option>
+    </select>
+    <?php if(isset($_POST['kategori']) && $_POST['kategori'] === 'lainnya'): ?>
+    <small class="text-muted">Masukkan kategori baru pada kolom di bawah ini</small>
+    <?php else: ?>
+    <small class="text-muted">Jika memilih "Lainnya", silakan submit form untuk menampilkan input kategori baru</small>
+    <?php endif; ?>
+</div>
                             
                             <div class="mb-3" id="other_category" style="display: none;">
                                 <label for="custom_category" class="form-label">Kategori Lainnya</label>
@@ -260,19 +230,6 @@ $categories = getCategories($database);
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Show/hide other category field
-        document.getElementById('kategori').addEventListener('change', function() {
-            var otherCategory = document.getElementById('other_category');
-            if (this.value === 'lainnya') {
-                otherCategory.style.display = 'block';
-            } else {
-                otherCategory.style.display = 'none';
-            }
-        });
-        
-        // Trigger the change event to set initial state
-        document.getElementById('kategori').dispatchEvent(new Event('change'));
-    </script>
+
 </body>
 </html>

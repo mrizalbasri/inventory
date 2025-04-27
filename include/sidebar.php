@@ -280,28 +280,7 @@ function isActive($page) {
     </ul>
     
     <!-- Administration Section -->
-    <div class="sidebar-heading nav-category">
-      Administration
-    </div>
-    <ul class="nav flex-column">
-      <li class="nav-item px-2 mb-2">
-        <a href="<?php echo BASE_URL; ?>supplier.php" class="nav-link <?php echo isActive('supplier.php'); ?>">
-          <i class="bi bi-truck"></i>
-          Suppliers
-        </a>
-      </li>
-      <li class="nav-item px-2 mb-2">
-        <a href="<?php echo BASE_URL; ?>pengguna.php" class="nav-link <?php echo isActive('pengguna.php'); ?>">
-          <i class="bi bi-people"></i>
-          Users
-        </a>
-      </li>
-      <li class="nav-item px-2 mb-2">
-        <a href="<?php echo BASE_URL; ?>pengaturan.php" class="nav-link <?php echo isActive('pengaturan.php'); ?>">
-          <i class="bi bi-gear"></i>
-          Settings
-        </a>
-      </li>
+   
     </ul>
     
     <!-- Logout Section (at the bottom) -->

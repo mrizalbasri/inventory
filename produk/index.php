@@ -1,148 +1,35 @@
 <?php
-// Include your database connection file
-require_once '../config/database.php';
 
 // Start session for messages
 session_start();
 
-// Function to retrieve all products with optional filtering
-function getAllProducts($database) {
-    $query = "SELECT * FROM produk";
-    $params = [];
-    
-    // Search functionality
-    if (isset($_GET['search']) && !empty($_GET['search'])) {
-        $search = $_GET['search'];
-        $query .= " WHERE nama_produk LIKE ? OR deskripsi LIKE ? OR kategori LIKE ?";
-        $params = ["%$search%", "%$search%", "%$search%"];
-    }
-    
-    // Category filter
-    if (isset($_GET['filter_kategori']) && !empty($_GET['filter_kategori'])) {
-        if (strpos($query, 'WHERE') !== false) {
-            $query .= " AND kategori = ?";
-        } else {
-            $query .= " WHERE kategori = ?";
-        }
-        $params[] = $_GET['filter_kategori'];
-    }
-    
-    // Sort functionality
-    $sort_by = isset($_GET['sort']) ? $_GET['sort'] : 'created_at';
-    $sort_order = isset($_GET['dir']) ? $_GET['dir'] : 'DESC';
-    
-    $allowed_sort_fields = ['id', 'nama_produk', 'harga', 'kategori', 'created_at'];
-    $allowed_sort_orders = ['ASC', 'DESC'];
-    
-    if (!in_array($sort_by, $allowed_sort_fields)) {
-        $sort_by = 'created_at';
-    }
-    
-    if (!in_array($sort_order, $allowed_sort_orders)) {
-        $sort_order = 'DESC';
-    }
-    
-    $query .= " ORDER BY $sort_by $sort_order";
-    
-    // Pagination
-    $records_per_page = 10;
-    $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-    $offset = ($page - 1) * $records_per_page;
-    
-    $query .= " LIMIT $offset, $records_per_page";
-    
-    $stmt = $database->prepare($query);
-    $stmt->execute($params);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
+// Include database connection file
+require_once '../config/database.php';
+require_once 'Product.php';
 
-// Function to count total products for pagination
-function countTotalProducts($database) {
-    $query = "SELECT COUNT(*) FROM produk";
-    $params = [];
-    
-    // Search functionality
-    if (isset($_GET['search']) && !empty($_GET['search'])) {
-        $search = $_GET['search'];
-        $query .= " WHERE nama_produk LIKE ? OR deskripsi LIKE ? OR kategori LIKE ?";
-        $params = ["%$search%", "%$search%", "%$search%"];
-    }
-    
-    // Category filter
-    if (isset($_GET['filter_kategori']) && !empty($_GET['filter_kategori'])) {
-        if (strpos($query, 'WHERE') !== false) {
-            $query .= " AND kategori = ?";
-        } else {
-            $query .= " WHERE kategori = ?";
-        }
-        $params[] = $_GET['filter_kategori'];
-    }
-    
-    $stmt = $database->prepare($query);
-    $stmt->execute($params);
-    return $stmt->fetchColumn();
-}
+$db = new Database();
+$productManager = new Product($db->getConnection());
 
-// Function to get unique categories
-function getCategories($database) {
-    $stmt = $database->prepare("SELECT DISTINCT kategori FROM produk WHERE kategori IS NOT NULL AND kategori != '' ORDER BY kategori");
-    $stmt->execute();
-    return $stmt->fetchAll(PDO::FETCH_COLUMN);
-}
+// Get the sorting parameters
+$current_sort_by = $productManager->getCurrentSortBy();
+$current_sort_order = $productManager->getCurrentSortOrder();
 
-// Function to get product by ID
-function getProductById($database, $id) {
-    $stmt = $database->prepare("SELECT * FROM produk WHERE id = ?");
-    $stmt->execute([$id]);
-    return $stmt->fetch(PDO::FETCH_ASSOC);
-}
+// Get products and pagination data
+$products = $productManager->getAllProducts();
+$total_records = $productManager->countTotalProducts();
+$categories = $productManager->getCategories();
+$currentPage = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$totalPages = ceil($total_records / $productManager->getRecordsPerPage());
 
 // Handle product deletion
-if (isset($_POST['delete_product'])) {
+if (isset($_POST['delete_product']) && isset($_POST['product_id'])) {
     $id = $_POST['product_id'];
-    
-    $stmt = $database->prepare("DELETE FROM produk WHERE id = ?");
-    
-    try {
-        $result = $stmt->execute([$id]);
-        
-        if ($result) {
-            $_SESSION['success_message'] = "Produk berhasil dihapus!";
-        } else {
-            $_SESSION['error_message'] = "Gagal menghapus produk.";
-        }
-    } catch(PDOException $e) {
-        $_SESSION['error_message'] = "Error: " . $e->getMessage();
-    }
-    
-    // Redirect to avoid form resubmission
+    $productManager->deleteProduct($id);
+    // Redirect to prevent form resubmission
     header("Location: " . $_SERVER['PHP_SELF']);
-    exit();
+    exit;
 }
 
-// Get categories for filter dropdown
-$categories = getCategories($database);
-
-// Get total records for pagination
-$total_records = countTotalProducts($database);
-$records_per_page = 10;
-$total_pages = ceil($total_records / $records_per_page);
-$current_page = isset($_GET['page']) ? max(1, min($total_pages, intval($_GET['page']))) : 1;
-
-// Retrieve products with filters
-$products = getAllProducts($database);
-
-// Get current sort parameters for column headers
-$current_sort_by = isset($_GET['sort']) ? $_GET['sort'] : 'created_at';
-$current_sort_order = isset($_GET['dir']) ? $_GET['dir'] : 'DESC';
-
-// Function to generate sort URL
-function getSortUrl($field) {
-    $params = $_GET;
-    $params['sort'] = $field;
-    $params['dir'] = (isset($_GET['sort']) && $_GET['sort'] == $field && isset($_GET['dir']) && $_GET['dir'] == 'asc') ? 'desc' : 'asc';
-    return '?' . http_build_query($params);
-}
 ?>
 
 <!DOCTYPE html>
@@ -389,23 +276,23 @@ function getSortUrl($field) {
                                 <thead>
                                     <tr>
                                         <th>
-                                            <a href="<?php echo getSortUrl('id'); ?>" class="text-decoration-none">
+                                            <a href="<?php echo $productManager->getSortUrl('id'); ?>" class="text-decoration-none">
                                                 ID <i class="bi bi-arrow-down-up"></i>
                                             </a>
                                         </th>
                                         <th>
-                                            <a href="<?php echo getSortUrl('nama_produk'); ?>" class="text-decoration-none">
+                                            <a href="<?php echo $productManager->getSortUrl('nama_produk'); ?>" class="text-decoration-none">
                                                 Nama <i class="bi bi-arrow-down-up"></i>
                                             </a>
                                         </th>
                                         <th>Deskripsi</th>
                                         <th>
-                                            <a href="<?php echo getSortUrl('harga'); ?>" class="text-decoration-none">
+                                            <a href="<?php echo $productManager->getSortUrl('harga'); ?>" class="text-decoration-none">
                                                 Harga <i class="bi bi-arrow-down-up"></i>
                                             </a>
                                         </th>
                                         <th>
-                                            <a href="<?php echo getSortUrl('kategori'); ?>" class="text-decoration-none">
+                                            <a href="<?php echo $productManager->getSortUrl('kategori'); ?>" class="text-decoration-none">
                                                 Kategori <i class="bi bi-arrow-down-up"></i>
                                             </a>
                                         </th>
@@ -478,21 +365,21 @@ function getSortUrl($field) {
                         </div>
                         
                         <!-- Pagination -->
-                        <?php if ($total_pages > 1): ?>
+                        <?php if ($totalPages > 1): ?>
                         <nav aria-label="Page navigation" class="mt-4">
                             <ul class="pagination justify-content-center">
-                                <li class="page-item <?php echo ($current_page <= 1) ? 'disabled' : ''; ?>">
-                                    <a class="page-link" href="?page=<?php echo $current_page - 1; ?>&sort=<?php echo $current_sort_by; ?>&dir=<?php echo $current_sort_order; ?><?php echo isset($_GET['search']) ? '&search='.$_GET['search'] : ''; ?><?php echo isset($_GET['filter_kategori']) ? '&filter_kategori='.$_GET['filter_kategori'] : ''; ?>" tabindex="-1" <?php echo ($current_page <= 1) ? 'aria-disabled="true"' : ''; ?>>Previous</a>
+                                <li class="page-item <?php echo ($currentPage <= 1) ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="?page=<?php echo $currentPage - 1; ?>&sort=<?php echo $current_sort_by; ?>&dir=<?php echo $current_sort_order; ?><?php echo isset($_GET['search']) ? '&search='.$_GET['search'] : ''; ?><?php echo isset($_GET['filter_kategori']) ? '&filter_kategori='.$_GET['filter_kategori'] : ''; ?>" tabindex="-1" <?php echo ($currentPage <= 1) ? 'aria-disabled="true"' : ''; ?>>Previous</a>
                                 </li>
                                 
-                                <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-                                <li class="page-item <?php echo ($current_page == $i) ? 'active' : ''; ?>">
+                                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                                <li class="page-item <?php echo ($currentPage == $i) ? 'active' : ''; ?>">
                                     <a class="page-link" href="?page=<?php echo $i; ?>&sort=<?php echo $current_sort_by; ?>&dir=<?php echo $current_sort_order; ?><?php echo isset($_GET['search']) ? '&search='.$_GET['search'] : ''; ?><?php echo isset($_GET['filter_kategori']) ? '&filter_kategori='.$_GET['filter_kategori'] : ''; ?>"><?php echo $i; ?></a>
                                 </li>
                                 <?php endfor; ?>
                                 
-                                <li class="page-item <?php echo ($current_page >= $total_pages) ? 'disabled' : ''; ?>">
-                                    <a class="page-link" href="?page=<?php echo $current_page + 1; ?>&sort=<?php echo $current_sort_by; ?>&dir=<?php echo $current_sort_order; ?><?php echo isset($_GET['search']) ? '&search='.$_GET['search'] : ''; ?><?php echo isset($_GET['filter_kategori']) ? '&filter_kategori='.$_GET['filter_kategori'] : ''; ?>">Next</a>
+                                <li class="page-item <?php echo ($currentPage >= $totalPages) ? 'disabled' : ''; ?>">
+                                    <a class="page-link" href="?page=<?php echo $currentPage + 1; ?>&sort=<?php echo $current_sort_by; ?>&dir=<?php echo $current_sort_order; ?><?php echo isset($_GET['search']) ? '&search='.$_GET['search'] : ''; ?><?php echo isset($_GET['filter_kategori']) ? '&filter_kategori='.$_GET['filter_kategori'] : ''; ?>">Next</a>
                                 </li>
                             </ul>
                         </nav>
@@ -500,8 +387,8 @@ function getSortUrl($field) {
                     </div>
                 </div>
 
-                  <!-- Footer -->
-                  <footer class="text-center py-4 mt-auto">
+                <!-- Footer -->
+                <footer class="text-center py-4 mt-auto">
                     <div>
                         <span>&copy; 2025 Inventory Management System</span>
                     </div>
